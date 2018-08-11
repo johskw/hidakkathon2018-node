@@ -13,6 +13,7 @@ const redis = require('redis');
 
 const PORT = process.env.PORT || 8080;
 let popularArticlesCache = null;
+let userPhotosCache = {};
 
 const app = express();
 
@@ -339,6 +340,7 @@ const insAndUpdUserPhoto = async (userId, photoPath, photoBinary) => {
         updated_at = ?`;
     await dbExecute(query, [userId, photoPath, getNow(), photoPath, getNow()]);
   }
+  userPhotosCache[userId] = null;
 };
 
 const updatePassword = async (userId, currentPassword, newPassword, conn) => {
@@ -425,23 +427,31 @@ app.get('/logout', (req, res) => {
 
 app.get('/photo/:member_id', loginRequired, async (req, res) => {
   const memberId = req.params['member_id'];
-  const userPhotos = await dbExecute('SELECT * FROM user_photos WHERE user_id = ?', [memberId]);
-  const str = 'iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAA3klEQVR42u3SAQ0AAAgDIN8/9K3hJmQgnXZ4KwIIII' +
-    'AACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACI' +
-    'AACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACCCAAAIIIAACIAACIAACIAACIAACIAACIA' +
-    'ACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAA3LNkJfxBbCdD2AAAAAElFTkSuQmCC';
   let img = '';
-  if (!userPhotos || !userPhotos.length) {
-    img = new Buffer(str, 'base64');
-  } else if (userPhotos[0]['photo_binary']) {
-    img = new Buffer(userPhotos[0]['photo_binary'], 'base64');
+  if (userPhotosCache[memberId]) {
+    img = userPhotosCache[memberId];
   } else {
-    const filePath = __dirname + '/../static/photo/' + userPhotos[0]['photo_path'];
-    try {
-      img = fs.readFileSync(filePath);
-    } catch (err) {
+    const userPhotos = await dbExecute('SELECT * FROM user_photos WHERE user_id = ?', [memberId]);
+    const str = 'iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAA3klEQVR42u3SAQ0AAAgDIN8/9K3hJmQgnXZ4KwIIII' +
+      'AACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACI' +
+      'AACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACCCAAAIIIAACIAACIAACIAACIAACIAACIA' +
+      'ACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAACIAA3LNkJfxBbCdD2AAAAAElFTkSuQmCC';
+    if (!userPhotos || !userPhotos.length) {
       img = new Buffer(str, 'base64');
+    } else if (userPhotos[0]['photo_binary']) {
+      img = new Buffer(userPhotos[0]['photo_binary'], 'base64');
+    } else {
+      const filePath = __dirname + '/../static/photo/' + userPhotos[0]['photo_path'];
+      try {
+        img = fs.readFileSync(filePath);
+      } catch (err) {
+        img = new Buffer(str, 'base64');
+      }
     }
+    if (Object.keys(userPhotosCache).length >= 1000) {
+      userPhotosCache = {};
+    }
+    userPhotosCache[memberId] = img;
   }
   res.set({'Content-Length': img.length});
   res.send(img);
@@ -904,6 +914,7 @@ app.post('/profileupdate/:user_id', (req, res) => {
 
 app.get('/initialize', async (req, res) => {
   popularArticlesCache = null;
+  userPhotosCache = {};
   await dbExecute('DELETE FROM users WHERE id > 5000');
   await dbExecute('DELETE FROM user_photos WHERE user_id > 5000');
   await dbExecute('DELETE FROM tags WHERE id > 999');
