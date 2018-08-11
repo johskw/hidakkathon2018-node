@@ -12,6 +12,7 @@ const mysql = require('mysql2/promise');
 const redis = require('redis');
 
 const PORT = process.env.PORT || 8080;
+let popularArticlesCache = null;
 
 const app = express();
 
@@ -215,21 +216,25 @@ const getArticleIineUsers = async (id) => {
 };
 
 const getPopularArticles = async () => {
-  const query = `
-    SELECT
-      article_id,
-      count(user_id) as iineCnt
-    FROM
-      iines
-    WHERE
-      updated_at >= DATE_ADD(NOW(), INTERVAL -1 MONTH)
-    GROUP BY
-      article_id
-    ORDER BY
-      iineCnt DESC,
-      article_id DESC
-    LIMIT 5`;
-  const popularArticles = await dbExecute(query);
+  if (popularArticlesCache === null) {
+    const query = `
+      SELECT
+        article_id,
+        count(user_id) as iineCnt
+      FROM
+        iines
+      WHERE
+        updated_at >= DATE_ADD(NOW(), INTERVAL -1 MONTH)
+      GROUP BY
+        article_id
+      ORDER BY
+        iineCnt DESC,
+        article_id DESC
+      LIMIT 5`;
+    popularArticlesCache = await dbExecute(query);
+  }
+  const popularArticles = popularArticlesCache;
+
   await Promise.all(popularArticles.map(async (article) => {
     article['article'] = await getArticle(article['article_id']);
     article['iine_users'] = await getArticleIineUsers(article['article_id']);
@@ -721,6 +726,20 @@ app.post('/iine/:article_id', async (req, res) => {
     await dbExecute(query, [articleId, userId]);
   }
   await dbExecute('SELECT COUNT(id) as cnt FROM iines WHERE article_id = ?', [articleId]);
+  popularArticlesCache = await dbExecute(`
+      SELECT
+        article_id,
+        count(user_id) as iineCnt
+      FROM
+        iines
+      WHERE
+        updated_at >= DATE_ADD(NOW(), INTERVAL -1 MONTH)
+      GROUP BY
+        article_id
+      ORDER BY
+        iineCnt DESC,
+        article_id DESC
+      LIMIT 5`);
   res.end();
 });
 
@@ -884,6 +903,7 @@ app.post('/profileupdate/:user_id', (req, res) => {
 });
 
 app.get('/initialize', async (req, res) => {
+  popularArticlesCache = null;
   await dbExecute('DELETE FROM users WHERE id > 5000');
   await dbExecute('DELETE FROM user_photos WHERE user_id > 5000');
   await dbExecute('DELETE FROM tags WHERE id > 999');
