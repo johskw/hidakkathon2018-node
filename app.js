@@ -192,16 +192,11 @@ const getArticleCount = async (authorId) => {
 };
 
 const getArticleTagNames = async (articleId) => {
-  let tagNames = [];
-  const query = 'SELECT tag_id FROM article_relate_tags WHERE article_id = ? ORDER BY tag_id ASC';
-  const tagIds = await dbExecute(query, [articleId]);
-  for (const tagId of tagIds) {
-    const query = 'SELECT tagname FROM tags WHERE id = ?';
-    const results = await dbExecute(query, [tagId['tag_id']]);
-    if (results && results[0] && results[0]['tagname']) {
-      tagNames.push({tagId: tagId['tag_id'], name: results[0]['tagname']});
-    }
-  }
+  const query = 'SELECT tag_id, tagname FROM article_relate_tags JOIN tags ON article_relate_tags.tag_id = tags.id WHERE article_id = ? ORDER BY tag_id ASC';
+  const results = await dbExecute(query, [articleId]);
+  const tagNames = results.map(result => {
+    return {tagId: result['tag_id'], name: result['tagname']}
+  });
   return tagNames;
 };
 
@@ -448,7 +443,7 @@ app.get('/photo/:member_id', loginRequired, async (req, res) => {
         img = new Buffer(str, 'base64');
       }
     }
-    if (Object.keys(userPhotosCache).length >= 1000) {
+    if (Object.keys(userPhotosCache).length >= 3000) {
       userPhotosCache = {};
     }
     userPhotosCache[memberId] = img;
